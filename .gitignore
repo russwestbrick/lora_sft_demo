@@ -1,5 +1,8 @@
 training_data_*.csv
 train.json
+images
+LLaMA-Factory
+.sft_venv
 __pycache__/
 *.pyc
 .DS_Store

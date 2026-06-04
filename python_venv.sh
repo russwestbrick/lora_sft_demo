@@ -14,7 +14,7 @@ if ! command -v "$UV" >/dev/null 2>&1; then
 fi
 
 rm -rf "$SFT_VENV"
-"$UV" venv --python "$BASE_PY" --seed "$SFT_VENV"
+"$UV" venv --python 3.11 --seed "$SFT_VENV"
 
 # torch 先单独装一遍，避免 llama-factory 解析 extras 时拉错 cuda 轮子
 "$UV" pip install --python "$PY" \
