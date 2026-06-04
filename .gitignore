@@ -1,0 +1,5 @@
+training_data_*.csv
+train.json
+__pycache__/
+*.pyc
+.DS_Store
