@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-SFT_ROOT="/home/work/Category_filesystem_V3/youwei.wang/sft"
+# 自身位置 -> SFT_ROOT
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SFT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
 SFT_VENV="$SFT_ROOT/.sft_venv"
 LF_DIR="$SFT_ROOT/LLaMA-Factory"
 
-BASE_PY="$(command -v python3.11 || command -v python3)"
 UV="$HOME/.local/bin/uv"
 PY="$SFT_VENV/bin/python"
 
@@ -14,6 +16,7 @@ if ! command -v "$UV" >/dev/null 2>&1; then
 fi
 
 rm -rf "$SFT_VENV"
+# uv 内置按需下载 standalone CPython 3.11，宿主不需要预装 3.11
 "$UV" venv --python 3.11 --seed "$SFT_VENV"
 
 # torch 先单独装一遍，避免 llama-factory 解析 extras 时拉错 cuda 轮子

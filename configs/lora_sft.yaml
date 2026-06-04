@@ -1,5 +1,5 @@
 ### model
-model_name_or_path: /home/work/model_repo/Qwen3-VL-8B-Instruct
+model_name_or_path: __MODEL_PATH__
 image_max_pixels: 262144
 video_max_pixels: 16384
 trust_remote_code: true
@@ -20,7 +20,7 @@ preprocessing_num_workers: 8
 dataloader_num_workers: 2
 
 ### output
-output_dir: /home/work/Category_filesystem_V3/youwei.wang/sft/saves/qwen3vl-8b/lora/sft
+output_dir: ../saves/qwen3vl-8b/lora/sft
 logging_steps: 1
 save_steps: 20
 plot_loss: true
