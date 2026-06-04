@@ -28,11 +28,10 @@ from tqdm import tqdm
 csv.field_size_limit(10**9)
 
 SCRIPT_DIR = Path(__file__).resolve().parent
-SFT_ROOT = SCRIPT_DIR.parent
+SFT_ROOT = SCRIPT_DIR
 
-OUT_ROOT = SFT_ROOT / "lora_sft_data"
-OUT_JSON = OUT_ROOT / "train.json"
-IMG_DIR = OUT_ROOT / "images"
+OUT_JSON = SFT_ROOT / "train.json"
+IMG_DIR = SFT_ROOT / "images"
 IMG_DIR.mkdir(parents=True, exist_ok=True)
 
 # 匹配 user_prompt 中以 🖼️ 开头的整行图片链接（U+1F5BC + 可选 VS16）

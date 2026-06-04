@@ -24,7 +24,7 @@ bash lora_sft/1_python_venv.sh
 
 3. CSV -> sharegpt JSON + 并发下载图片（默认 16 路，可 `export IMG_CONCURRENCY=...` 调）：
 ```bash
-./.sft_venv/bin/python lora_sft/2_convert_csv_to_json.py
+./.sft_venv/bin/python 2_convert_csv_to_json.py
 ```
 
 4. 注册数据集 + 渲染并拷贝 yaml 到 LLaMA-Factory：
