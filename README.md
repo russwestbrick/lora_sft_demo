@@ -49,6 +49,6 @@ cd LLaMA-Factory && \
 
 ## 产物落点
 - venv：`$SFT_ROOT/.sft_venv/`
-- 训练数据：`$SFT_ROOT/lora_sft_data/train.json` + `$SFT_ROOT/lora_sft_data/images/`
+- 训练数据：`$SFT_ROOT/lora_sft/train.json` + `$SFT_ROOT/lora_sft/images/`
 - LoRA：`$SFT_ROOT/saves/qwen3vl-8b/lora/sft/`
 - 合并模型：`$SFT_ROOT/saves/qwen3vl-8b/lora/merged/`

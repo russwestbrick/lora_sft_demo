@@ -13,7 +13,7 @@ MERGE_DIR="$LF_DIR/examples/merge_lora"
 : "${MODEL_PATH:?need to: export MODEL_PATH=/abs/path/to/Qwen3-VL-8B-Instruct (see README)}"
 
 # 1) 数据：把 train.json 的绝对路径注册到 dataset_info.json
-DS_JSON="$SFT_ROOT/lora_sft_data/train.json"
+DS_JSON="$SCRIPT_DIR/train.json"
 test -f "$DS_JSON" || { echo "missing $DS_JSON, run 2_convert_csv_to_json.py first"; exit 1; }
 
 python3 - "$DATA_DIR/dataset_info.json" "$DS_JSON" <<'PY'
