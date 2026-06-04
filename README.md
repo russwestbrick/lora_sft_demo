@@ -1,35 +1,46 @@
 # Qwen3-VL-8B-Instruct LoRA SFT 最小链路
 
-在 AIS A100 上用 LLaMA-Factory `main` 分支对本地 `Qwen3-VL-8B-Instruct` 跑一次能跑通的 LoRA SFT 并导出合并 ckpt。
+在 AIS A100 上用 LLaMA-Factory `main` 分支对本地 `Qwen3-VL-8B-Instruct` 跑一次能跑通的 LoRA SFT，并导出合并 ckpt。
 
-约定工作根 `SFT_ROOT = /home/work/Category_filesystem_V3/youwei.wang/sft/`，本仓库已 clone 到 `$SFT_ROOT/lora_sft`。**所有步骤都在 `$SFT_ROOT` 下执行**。
+**工作目录 = 本仓库目录**（下面记为 `WORK_DIR`）。`LLaMA-Factory/`、`.sft_venv/`、`train_data/`、`saves/` 都会落到 `WORK_DIR/` 下。
 
-## 你只需要改这两行
+## 配置只改 0_config.sh 顶部三行
 ```bash
-export CSV_NAME="training_data_extract_attributes_and_item_tags.csv"
-export MODEL_PATH="/home/work/model_repo/Qwen3-VL-8B-Instruct"
+CSV_NAME="training_data_extract_attributes_and_item_tags.csv"
+MODEL_PATH="/home/work/model_repo/Qwen3-VL-8B-Instruct"
+IMG_CONCURRENCY=16
 ```
 
-## 执行步骤
+需要肉眼复核配置时：
+```bash
+cd WORK_DIR
+bash 0_config.sh    # 只打印现场摘要，不会改任何文件
+```
 
-1. 拉 LLaMA-Factory（落到 `$SFT_ROOT/LLaMA-Factory`）：
+步骤脚本（1_/2_/3_）会自动 `source 0_config.sh`，所以无需手动 `source` 或 `export`。
+
+## 执行步骤（一律 `cd WORK_DIR` 后执行）
+
+0. 把 CSV 放到 `train_data/$CSV_NAME`（首次跑时 `mkdir -p train_data && mv <旧路径>/$CSV_NAME train_data/`）。
+
+1. 拉 LLaMA-Factory：
 ```bash
 git clone --depth 1 https://github.com/hiyouga/LLaMA-Factory.git LLaMA-Factory
 ```
 
-2. 建 SFT venv（uv 会自动拉一份 standalone CPython 3.11）：
+2. 建 SFT venv（uv 会自动拉 standalone CPython 3.11）：
 ```bash
-bash lora_sft/1_python_venv.sh
+bash 1_python_venv.sh
 ```
 
-3. CSV -> sharegpt JSON + 并发下载图片（默认 16 路，可 `export IMG_CONCURRENCY=...` 调）：
+3. CSV -> sharegpt JSON + 并发下载图片：
 ```bash
-./.sft_venv/bin/python 2_convert_csv_to_json.py
+.sft_venv/bin/python 2_convert_csv_to_json.py
 ```
 
 4. 注册数据集 + 渲染并拷贝 yaml 到 LLaMA-Factory：
 ```bash
-bash lora_sft/3_install_to_llamafactory.sh
+bash 3_install_to_llamafactory.sh
 ```
 
 5. LoRA SFT（单卡 A100）：
@@ -48,7 +59,7 @@ cd LLaMA-Factory && \
 ```
 
 ## 产物落点
-- venv：`$SFT_ROOT/.sft_venv/`
-- 训练数据：`$SFT_ROOT/lora_sft/train.json` + `$SFT_ROOT/lora_sft/images/`
-- LoRA：`$SFT_ROOT/saves/qwen3vl-8b/lora/sft/`
-- 合并模型：`$SFT_ROOT/saves/qwen3vl-8b/lora/merged/`
+- venv：`WORK_DIR/.sft_venv/`
+- 训练数据：`WORK_DIR/train_data/{$CSV_NAME, train.json, images/}`
+- LoRA：`WORK_DIR/saves/qwen3vl-8b/lora/sft/`
+- 合并模型：`WORK_DIR/saves/qwen3vl-8b/lora/merged/`

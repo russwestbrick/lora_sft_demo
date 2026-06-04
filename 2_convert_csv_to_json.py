@@ -1,15 +1,13 @@
 #!/usr/bin/env python3
-"""CSV -> LLaMA-Factory sharegpt JSON (multimodal), with threaded image download.
+"""CSV -> LLaMA-Factory sharegpt JSON (multimodal), threaded image download.
 
-Usage:
-    python 2_convert_csv_to_json.py [/path/to/input.csv]
+Configuration is sourced from sibling 0_config.sh. No CLI args required.
 
-If the CSV path is omitted, falls back to:
-    $SFT_ROOT / $CSV_NAME
-
-Outputs (fixed, relative to $SFT_ROOT):
-    lora_sft_data/train.json
-    lora_sft_data/images/<md5>.<ext>
+Inputs  (from env, see 0_config.sh):
+    CSV_PATH         absolute path to source CSV
+    TRAIN_JSON       output JSON path
+    IMG_DIR          directory to cache/download images into
+    IMG_CONCURRENCY  thread pool size (default 16)
 """
 import csv
 import hashlib
@@ -17,6 +15,7 @@ import io
 import json
 import os
 import re
+import subprocess
 import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
@@ -27,22 +26,43 @@ from tqdm import tqdm
 
 csv.field_size_limit(10**9)
 
-SCRIPT_DIR = Path(__file__).resolve().parent
-SFT_ROOT = SCRIPT_DIR
-
-OUT_JSON = SFT_ROOT / "train.json"
-IMG_DIR = SFT_ROOT / "images"
-IMG_DIR.mkdir(parents=True, exist_ok=True)
-
-# 匹配 user_prompt 中以 🖼️ 开头的整行图片链接（U+1F5BC + 可选 VS16）
 IMG_LINE_RE = re.compile(r"^\s*\U0001F5BC\uFE0F?\s*(\S+)\s*$", re.MULTILINE)
 TIMEOUT = 20
-CONCURRENCY = int(os.getenv("IMG_CONCURRENCY", "16"))
 IMG_EXTS = (".jpg", ".jpeg", ".png", ".webp", ".bmp")
 
 
+def _load_config():
+    """Source sibling 0_config.sh into os.environ if not already loaded."""
+    if "WORK_DIR" in os.environ and "CSV_PATH" in os.environ:
+        return
+    cfg = Path(__file__).resolve().parent / "0_config.sh"
+    if not cfg.is_file():
+        print(f"[error] missing config file: {cfg}", file=sys.stderr)
+        sys.exit(2)
+    # set -a 让 source 出来的赋值自动 export；之后 env 列出所有变量
+    out = subprocess.run(
+        ["bash", "-c", f'set -a; source "{cfg}"; env'],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+    for line in out.splitlines():
+        if "=" not in line:
+            continue
+        k, v = line.split("=", 1)
+        os.environ[k] = v
+
+
+_load_config()
+
+CSV_PATH = Path(os.environ["CSV_PATH"])
+TRAIN_JSON = Path(os.environ["TRAIN_JSON"])
+IMG_DIR = Path(os.environ["IMG_DIR"])
+CONCURRENCY = int(os.environ.get("IMG_CONCURRENCY", "16"))
+IMG_DIR.mkdir(parents=True, exist_ok=True)
+
+
 def cached_path(url: str):
-    """Return existing local path for url if any cached file matches."""
     name = hashlib.md5(url.encode()).hexdigest()
     for ext in IMG_EXTS:
         p = IMG_DIR / f"{name}{ext}"
@@ -52,7 +72,6 @@ def cached_path(url: str):
 
 
 def download_image(url: str):
-    """Download a remote image into IMG_DIR; reuse existing file if present."""
     cached = cached_path(url)
     if cached is not None:
         return cached
@@ -69,22 +88,7 @@ def download_image(url: str):
         return None
 
 
-def resolve_csv_path() -> Path:
-    if len(sys.argv) >= 2:
-        return Path(sys.argv[1]).expanduser().resolve()
-    csv_name = os.environ.get("CSV_NAME")
-    if not csv_name:
-        print(
-            "usage: 2_convert_csv_to_json.py <input_csv>\n"
-            "   or: export CSV_NAME=<file_in_sft_root>",
-            file=sys.stderr,
-        )
-        sys.exit(2)
-    return (SFT_ROOT / csv_name).resolve()
-
-
 def iter_rows(csv_path: Path):
-    """Yield (system, user_prompt, llm_output, [urls]) for each valid row."""
     with csv_path.open("r", encoding="utf-8-sig", newline="") as f:
         reader = csv.DictReader(f)
         for row in reader:
@@ -98,17 +102,17 @@ def iter_rows(csv_path: Path):
 
 
 def main():
-    csv_path = resolve_csv_path()
-    if not csv_path.is_file():
-        print(f"[error] CSV not found: {csv_path}", file=sys.stderr)
+    if not CSV_PATH.is_file():
+        print(f"[error] CSV not found: {CSV_PATH}", file=sys.stderr)
+        print(f"        put your CSV at: {CSV_PATH.parent}/<CSV_NAME>", file=sys.stderr)
         sys.exit(2)
 
-    # Pass 1: collect rows + dedup all URLs (skip ones already cached)
+    # Pass 1: collect rows + dedup URLs (skip ones already cached)
     rows = []
     urls_to_fetch: set[str] = set()
     cache_hits: dict[str, Path] = {}
-    print(f"[scan] {csv_path}")
-    for sys_p, user_p, answer, urls in tqdm(iter_rows(csv_path), desc="scan", unit="row"):
+    print(f"[scan] {CSV_PATH}")
+    for sys_p, user_p, answer, urls in tqdm(iter_rows(CSV_PATH), desc="scan", unit="row"):
         rows.append((sys_p, user_p, answer, urls))
         for u in urls:
             if u in cache_hits or u in urls_to_fetch:
@@ -142,7 +146,7 @@ def main():
                     print(f"[warn] worker error for {u}: {e}", file=sys.stderr)
                     url_to_path[u] = None
 
-    # Pass 3: build samples using url_to_path
+    # Pass 3: build samples
     samples = []
     for sys_p, user_p, answer, urls in rows:
         images: list[str] = []
@@ -157,7 +161,6 @@ def main():
 
         cleaned = IMG_LINE_RE.sub(_sub, user_p)
         cleaned = re.sub(r"\n{3,}", "\n\n", cleaned).strip()
-
         if not images:
             continue
         sample = {
@@ -171,11 +174,11 @@ def main():
             sample["system"] = sys_p
         samples.append(sample)
 
-    OUT_JSON.parent.mkdir(parents=True, exist_ok=True)
-    OUT_JSON.write_text(
+    TRAIN_JSON.parent.mkdir(parents=True, exist_ok=True)
+    TRAIN_JSON.write_text(
         json.dumps(samples, ensure_ascii=False, indent=2), encoding="utf-8"
     )
-    print(f"wrote {len(samples)} samples -> {OUT_JSON}")
+    print(f"wrote {len(samples)} samples -> {TRAIN_JSON}")
     print(f"images dir: {IMG_DIR}")
 
 

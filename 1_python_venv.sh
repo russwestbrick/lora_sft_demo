@@ -1,23 +1,18 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# 自身位置 -> SFT_ROOT
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SFT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-
-SFT_VENV="$SFT_ROOT/.sft_venv"
-LF_DIR="$SFT_ROOT/LLaMA-Factory"
+# shellcheck disable=SC1091
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/0_config.sh"
 
 UV="$HOME/.local/bin/uv"
-PY="$SFT_VENV/bin/python"
 
 if ! command -v "$UV" >/dev/null 2>&1; then
   curl -LsSf https://astral.sh/uv/install.sh | sh
 fi
 
-rm -rf "$SFT_VENV"
+rm -rf "$VENV_DIR"
 # uv 内置按需下载 standalone CPython 3.11，宿主不需要预装 3.11
-"$UV" venv --python 3.11 --seed "$SFT_VENV"
+"$UV" venv --python 3.11 --seed "$VENV_DIR"
 
 # torch 先单独装一遍，避免 llama-factory 解析 extras 时拉错 cuda 轮子
 "$UV" pip install --python "$PY" \
@@ -30,7 +25,7 @@ rm -rf "$SFT_VENV"
 # 数据脚本用
 "$UV" pip install --python "$PY" pillow requests pandas tqdm
 
-echo "venv ready: $SFT_VENV"
+echo "venv ready: $VENV_DIR"
 "$PY" -c "import torch, transformers, peft, trl, llamafactory; \
 print('torch', torch.__version__, 'cuda', torch.cuda.is_available()); \
 print('transformers', transformers.__version__); \
