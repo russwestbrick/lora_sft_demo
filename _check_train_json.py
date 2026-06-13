@@ -6,6 +6,7 @@
 - 等比截断后看 <image> 占位是否被保留
 - 删掉会被砍掉 image 占位的样本，剩余 shuffle 后原地覆盖 train.json
 - 旧文件备份为 train.json.bak
+- 执行：.sft_venv/bin/python /home/work/slamm/youwei.wang/lora_sft_demo/_check_train_json.py
 """
 import json, math, os, random, re, shutil, subprocess, sys
 from pathlib import Path
