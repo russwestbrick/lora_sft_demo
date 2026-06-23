@@ -48,27 +48,42 @@ bash 1_python_venv.sh qwen3vl_8b_extract_attrs_h100_4gpu
 bash 3_install_to_llamafactory.sh qwen3vl_8b_extract_attrs_h100_4gpu
 ```
 
-5.1 LoRA SFT（AIS entry point / torchrun）：
+5.1 LoRA SFT（单卡 smoke test）：
 ```bash
-source ./0_config.sh qwen3vl_8b_extract_attrs_h100_4gpu
-cd "$LF_DIR"
-
-../.sft_venv/bin/torchrun \
-  --nproc_per_node 1 \
-  --nnodes "$WORLD_SIZE" \
-  --node_rank "$RANK" \
-  --master_addr "$MASTER_ADDR" \
-  --master_port "$MASTER_PORT" \
+(
+  source ./0_config.sh qwen3vl_8b_extract_attrs_h100_4gpu
+  cd "$LF_DIR"
+  CUDA_VISIBLE_DEVICES=0 \
   ../.sft_venv/bin/llamafactory-cli train "$TRAIN_YAML_OUT"
+)
+```
+
+这一步用于先在单卡上调通数据、yaml、模型路径和 LLaMA-Factory 环境，不依赖 AIS 分布式变量。
+
+5.2 LoRA SFT（AIS entry point / torchrun）：
+```bash
+(
+  source ./0_config.sh qwen3vl_8b_extract_attrs_h100_4gpu
+  cd "$LF_DIR"
+  ../.sft_venv/bin/torchrun \
+    --nproc_per_node 1 \
+    --nnodes "$WORLD_SIZE" \
+    --node_rank "$RANK" \
+    --master_addr "$MASTER_ADDR" \
+    --master_port "$MASTER_PORT" \
+    ../.sft_venv/bin/llamafactory-cli train "$TRAIN_YAML_OUT"
+)
 ```
 
 这一步只依赖 task name、准备阶段导出的 `LF_DIR` 和 `TRAIN_YAML_OUT`，以及 AIS 注入的 `WORLD_SIZE`、`RANK`、`MASTER_ADDR`、`MASTER_PORT`。AIS 每个 pod 一张卡，所以 `--nproc_per_node` 固定写 1；这些分布式启动参数不写进 `0_yaml_to_setting.py`。
 
 6. 导出合并 ckpt：
 ```bash
-source ./0_config.sh qwen3vl_8b_extract_attrs_h100_4gpu
-cd "$LF_DIR"
-"$LF_CLI" export "$EXPORT_YAML_OUT"
+(
+  source ./0_config.sh qwen3vl_8b_extract_attrs_h100_4gpu
+  cd "$LF_DIR"
+  "$LF_CLI" export "$EXPORT_YAML_OUT"
+)
 ```
 
 ## 产物落点
