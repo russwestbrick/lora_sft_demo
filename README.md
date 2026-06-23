@@ -48,22 +48,19 @@ bash 1_python_venv.sh qwen3vl_8b_extract_attrs_h100_4gpu
 bash 3_install_to_llamafactory.sh qwen3vl_8b_extract_attrs_h100_4gpu
 ```
 
-5.1 LoRA SFT（4 卡 H100 / torchrun）：
+5.1 LoRA SFT（AIS 4 节点，每节点 1 张 H100 / torchrun）：
 ```bash
 source ./0_config.sh qwen3vl_8b_extract_attrs_h100_4gpu
 cd "$LF_DIR"
 
-CUDA_VISIBLE_DEVICES="$CUDA_VISIBLE_DEVICES" \
-torchrun \
-  --nnodes="${NNODES:-1}" \
-  --node_rank="${NODE_RANK:-0}" \
+"$VENV_DIR/bin/torchrun" \
+  --nnodes="$WORLD_SIZE" \
+  --node_rank="$RANK" \
   --nproc_per_node="$NPROC_PER_NODE" \
-  --master_addr="${MASTER_ADDR:-127.0.0.1}" \
-  --master_port="$MASTER_PORT" \
   "$LF_CLI" train "$TRAIN_YAML_OUT"
 ```
 
-`torchrun` 会给每个进程注入 `RANK`、`WORLD_SIZE`、`LOCAL_RANK`；当前默认 task 是 4 卡 H100，`per_device_train_batch_size=1`、`gradient_accumulation_steps=1`，所以 global batch 仍是 4。
+AIS 会注入 `WORLD_SIZE`、`RANK`、`MASTER_ADDR`、`MASTER_PORT`、`LOCAL_RANK`。当前 task 不覆盖 `CUDA_VISIBLE_DEVICES`、`MASTER_ADDR`、`MASTER_PORT`；`NPROC_PER_NODE=1`，4 个 AIS pod 时 `global_batch = 1 * 1 * 1 * 4 = 4`。
 
 6. 导出合并 ckpt：
 ```bash

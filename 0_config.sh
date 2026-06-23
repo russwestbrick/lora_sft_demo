@@ -18,6 +18,7 @@ TASK_EXPORTS="$(
 import runpy
 import shlex
 import sys
+import os
 from pathlib import Path
 
 settings_file = Path(sys.argv[1])
@@ -120,16 +121,28 @@ values = {
     "DATASET_NAME": required_str("dataset_name"),
     "PER_DEVICE_TRAIN_BATCH_SIZE": positive_int("per_device_train_batch_size", 1),
     "GRADIENT_ACCUMULATION_STEPS": positive_int("gradient_accumulation_steps", 1),
-    "CUDA_VISIBLE_DEVICES": str(env.get("CUDA_VISIBLE_DEVICES", "0")).strip(),
     "NPROC_PER_NODE": positive_env_int("NPROC_PER_NODE", 1),
-    "MASTER_PORT": positive_env_int("MASTER_PORT", 29500),
+    "EXPECTED_WORLD_SIZE": positive_int("expected_world_size", 1),
 }
+for optional_env_name in ("CUDA_VISIBLE_DEVICES", "MASTER_ADDR", "MASTER_PORT"):
+    optional_env_value = str(env.get(optional_env_name) or "").strip()
+    if optional_env_value:
+        values[optional_env_name] = optional_env_value
 values["PY"] = str(Path(values["VENV_DIR"]) / "bin" / "python")
 values["LF_CLI"] = str(Path(values["VENV_DIR"]) / "bin" / "llamafactory-cli")
+runtime_world_size_raw = os.environ.get("WORLD_SIZE") or values["EXPECTED_WORLD_SIZE"]
+try:
+    runtime_world_size = int(runtime_world_size_raw)
+except Exception:
+    raise SystemExit("ERROR: WORLD_SIZE must be a positive integer when set by the platform")
+if runtime_world_size <= 0:
+    raise SystemExit("ERROR: WORLD_SIZE must be a positive integer when set by the platform")
+values["EFFECTIVE_WORLD_SIZE"] = runtime_world_size
 values["GLOBAL_BATCH_SIZE"] = (
     values["PER_DEVICE_TRAIN_BATCH_SIZE"]
     * values["GRADIENT_ACCUMULATION_STEPS"]
     * values["NPROC_PER_NODE"]
+    * values["EFFECTIVE_WORLD_SIZE"]
 )
 
 for name, value in values.items():
@@ -163,8 +176,14 @@ if [ "${BASH_SOURCE[0]}" = "${0}" ]; then
   echo "TRAIN_YAML_TPL  : $TRAIN_YAML_TPL (exists? $(exists "$TRAIN_YAML_TPL"))"
   echo "TRAIN_YAML_OUT  : $TRAIN_YAML_OUT"
   echo "EXPORT_YAML_OUT : $EXPORT_YAML_OUT"
-  echo "CUDA_VISIBLE_DEVICES           : $CUDA_VISIBLE_DEVICES"
+  echo "CUDA_VISIBLE_DEVICES           : ${CUDA_VISIBLE_DEVICES:-<platform default>}"
+  echo "WORLD_SIZE                     : ${WORLD_SIZE:-<not set; expected $EXPECTED_WORLD_SIZE>}"
+  echo "RANK                           : ${RANK:-<platform default>}"
+  echo "MASTER_ADDR                    : ${MASTER_ADDR:-<platform default>}"
+  echo "MASTER_PORT                    : ${MASTER_PORT:-<platform default>}"
   echo "NPROC_PER_NODE                 : $NPROC_PER_NODE"
+  echo "EXPECTED_WORLD_SIZE            : $EXPECTED_WORLD_SIZE"
+  echo "EFFECTIVE_WORLD_SIZE           : $EFFECTIVE_WORLD_SIZE"
   echo "PER_DEVICE_TRAIN_BATCH_SIZE    : $PER_DEVICE_TRAIN_BATCH_SIZE"
   echo "GRADIENT_ACCUMULATION_STEPS    : $GRADIENT_ACCUMULATION_STEPS"
   echo "GLOBAL_BATCH_SIZE              : $GLOBAL_BATCH_SIZE"
