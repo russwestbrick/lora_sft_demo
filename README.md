@@ -1,27 +1,27 @@
-# Qwen3-VL-8B-Instruct LoRA SFT 最小链路
+# Qwen3-VL LoRA SFT 链路
 
-在 AIS A100 上用 LLaMA-Factory `main` 分支对本地 `Qwen3-VL-8B-Instruct` 跑一次能跑通的 LoRA SFT，并导出合并 ckpt。
+用 LLaMA-Factory `main` 分支对本地 Qwen3-VL 类模型跑 LoRA SFT，并导出合并 ckpt。
 
 **工作目录 = 本仓库目录**（下面记为 `WORK_DIR`）。`LLaMA-Factory/`、`.sft_venv/`、`train_data/`、`saves/` 都会落到 `WORK_DIR/` 下。
 
-## 配置只改 0_config.sh 顶部三行
-```bash
-CSV_NAME="training_data_extract_attributes_and_item_tags.csv"
-MODEL_PATH="/home/work/model_repo/Qwen3-VL-8B-Instruct"
-IMG_CONCURRENCY=16
-```
+## 配置只改 0_yaml_to_setting.py
+
+每个任务都写在 `0_yaml_to_setting.py` 的 `TASK_SETTINGS` 里，切换 `TASK_NAME` 就能切换 model、CSV、dataset、yaml 模板、渲染后的 yaml 文件名、输出目录和多卡参数。
 
 需要肉眼复核配置时：
 ```bash
 cd WORK_DIR
-bash 0_config.sh    # 只打印现场摘要，不会改任何文件
+bash 0_config.sh qwen3vl_8b_extract_attrs_h100_4gpu
 ```
 
-步骤脚本（1_/2_/3_）会自动 `source 0_config.sh`，所以无需手动 `source` 或 `export`。
+步骤脚本会自动 `source 0_config.sh`。不传 task 时使用 `0_yaml_to_setting.py` 里的 `DEFAULT_TASK_NAME`。
 
 ## 执行步骤（一律 `cd WORK_DIR` 后执行）
 
-0. 把 CSV 放到 `train_data/$CSV_NAME`（首次跑时 `mkdir -p train_data && mv <旧路径>/$CSV_NAME train_data/`）。
+0. 把 CSV 放到当前 task 配置的 `CSV_PATH`。先用下面命令查看具体路径：
+```bash
+bash 0_config.sh qwen3vl_8b_extract_attrs_h100_4gpu
+```
 
 1. 拉 LLaMA-Factory：
 ```bash
@@ -30,36 +30,50 @@ git clone --depth 1 https://github.com/hiyouga/LLaMA-Factory.git LLaMA-Factory
 
 2. 建 SFT venv（uv 会自动拉 standalone CPython 3.11）：
 ```bash
-bash 1_python_venv.sh
+bash 1_python_venv.sh qwen3vl_8b_extract_attrs_h100_4gpu
 ```
 
 3. CSV -> sharegpt JSON + 并发下载图片：
 ```bash
-.sft_venv/bin/python 2_convert_csv_to_json.py
+.sft_venv/bin/python 2_convert_csv_to_json.py qwen3vl_8b_extract_attrs_h100_4gpu
 ```
 
-4. 注册数据集 + 渲染并拷贝 yaml 到 LLaMA-Factory：
+4. 清洗 train JSON，校验图片路径和 LLaMA-Factory 等比截断后 `<image>` 是否保留：
 ```bash
-bash 3_install_to_llamafactory.sh
+.sft_venv/bin/python 2_check_train_json.py qwen3vl_8b_extract_attrs_h100_4gpu
 ```
 
-5. LoRA SFT（单卡 A100）：
+5. 注册数据集 + 渲染并拷贝 yaml 到 LLaMA-Factory：
 ```bash
-cd LLaMA-Factory && \
-CUDA_VISIBLE_DEVICES=0 \
-../.sft_venv/bin/llamafactory-cli train \
-  examples/train_lora/qwen3vl_8b_lora_sft.yaml
+bash 3_install_to_llamafactory.sh qwen3vl_8b_extract_attrs_h100_4gpu
 ```
+
+5.1 LoRA SFT（4 卡 H100 / torchrun）：
+```bash
+source ./0_config.sh qwen3vl_8b_extract_attrs_h100_4gpu
+cd "$LF_DIR"
+
+CUDA_VISIBLE_DEVICES="$CUDA_VISIBLE_DEVICES" \
+torchrun \
+  --nnodes="${NNODES:-1}" \
+  --node_rank="${NODE_RANK:-0}" \
+  --nproc_per_node="$NPROC_PER_NODE" \
+  --master_addr="${MASTER_ADDR:-127.0.0.1}" \
+  --master_port="$MASTER_PORT" \
+  "$LF_CLI" train "$TRAIN_YAML_OUT"
+```
+
+`torchrun` 会给每个进程注入 `RANK`、`WORLD_SIZE`、`LOCAL_RANK`；当前默认 task 是 4 卡 H100，`per_device_train_batch_size=1`、`gradient_accumulation_steps=1`，所以 global batch 仍是 4。
 
 6. 导出合并 ckpt：
 ```bash
-cd LLaMA-Factory && \
-../.sft_venv/bin/llamafactory-cli export \
-  examples/merge_lora/qwen3vl_8b_lora_merge.yaml
+source ./0_config.sh qwen3vl_8b_extract_attrs_h100_4gpu
+cd "$LF_DIR"
+"$LF_CLI" export "$EXPORT_YAML_OUT"
 ```
 
 ## 产物落点
 - venv：`WORK_DIR/.sft_venv/`
-- 训练数据：`WORK_DIR/train_data/{$CSV_NAME, train.json, images/}`
-- LoRA：`WORK_DIR/saves/qwen3vl-8b/lora/sft/`
-- 合并模型：`WORK_DIR/saves/qwen3vl-8b/lora/merged/`
+- 训练数据：当前 task 的 `CSV_PATH` / `TRAIN_JSON` / `IMG_DIR`
+- LoRA：当前 task 的 `SAVE_DIR`
+- 合并模型：当前 task 的 `MERGED_DIR`

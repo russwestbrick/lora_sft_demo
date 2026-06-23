@@ -2,12 +2,12 @@
 set -euo pipefail
 
 # shellcheck disable=SC1091
-source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/0_config.sh"
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/0_config.sh" "${1:-${TASK_NAME:-}}"
 
 # 校验前置条件
 test -d "$LF_DIR" || { echo "missing $LF_DIR, run: git clone --depth 1 https://github.com/hiyouga/LLaMA-Factory.git LLaMA-Factory"; exit 1; }
 test -f "$TRAIN_JSON" || { echo "missing $TRAIN_JSON, run 2_convert_csv_to_json.py first"; exit 1; }
-test -n "$MODEL_PATH" || { echo "MODEL_PATH is empty, edit 0_config.sh"; exit 1; }
+test -n "$MODEL_PATH" || { echo "MODEL_PATH is empty, edit 0_yaml_to_setting.py"; exit 1; }
 
 DATA_INFO="$LF_DIR/data/dataset_info.json"
 
@@ -38,28 +38,42 @@ info_path.write_text(json.dumps(info, ensure_ascii=False, indent=2))
 print(f"registered dataset: {ds_name} -> {ds_json}")
 PY
 
-# 2) yaml：把模板里的占位符替换为绝对路径，输出到 LLaMA-Factory 仓库内
+# 2) yaml：把模板里的占位符替换为当前 task 的设置，输出到 LLaMA-Factory 仓库内
 mkdir -p "$(dirname "$TRAIN_YAML_OUT")" "$(dirname "$EXPORT_YAML_OUT")"
 
-sed -e "s|__MODEL_PATH__|${MODEL_PATH}|g" \
-    -e "s|__SAVE_DIR__|${SAVE_DIR}|g" \
-    -e "s|__MERGED_DIR__|${MERGED_DIR}|g" \
-    "$TRAIN_YAML_TPL" > "$TRAIN_YAML_OUT"
+python3 - "$TRAIN_YAML_TPL" "$TRAIN_YAML_OUT" "$EXPORT_YAML_TPL" "$EXPORT_YAML_OUT" <<'PY'
+import os
+import re
+import sys
+from pathlib import Path
 
-sed -e "s|__MODEL_PATH__|${MODEL_PATH}|g" \
-    -e "s|__SAVE_DIR__|${SAVE_DIR}|g" \
-    -e "s|__MERGED_DIR__|${MERGED_DIR}|g" \
-    "$EXPORT_YAML_TPL" > "$EXPORT_YAML_OUT"
+train_tpl, train_out, export_tpl, export_out = [Path(arg) for arg in sys.argv[1:]]
+replacements = {
+    "__MODEL_PATH__": os.environ["MODEL_PATH"],
+    "__SAVE_DIR__": os.environ["SAVE_DIR"],
+    "__MERGED_DIR__": os.environ["MERGED_DIR"],
+    "__DATASET_NAME__": os.environ["DATASET_NAME"],
+    "__PER_DEVICE_TRAIN_BATCH_SIZE__": os.environ["PER_DEVICE_TRAIN_BATCH_SIZE"],
+    "__GRADIENT_ACCUMULATION_STEPS__": os.environ["GRADIENT_ACCUMULATION_STEPS"],
+}
+
+def render(src: Path, dst: Path) -> None:
+    text = src.read_text(encoding="utf-8")
+    for key, value in replacements.items():
+        text = text.replace(key, value)
+    unresolved = sorted(set(re.findall(r"__[A-Z0-9_]+__", text)))
+    if unresolved:
+        raise SystemExit(f"[error] unresolved placeholder(s) in {src}: {', '.join(unresolved)}")
+    dst.write_text(text, encoding="utf-8")
+    print(f"rendered {src} -> {dst}")
+
+render(train_tpl, train_out)
+render(export_tpl, export_out)
+PY
 
 echo "---- rendered train yaml (head) ----"
 head -n 5 "$TRAIN_YAML_OUT"
 echo "---- rendered export yaml (head) ----"
 head -n 5 "$EXPORT_YAML_OUT"
-
-# 检查占位符是否全部被替换
-if grep -q "__[A-Z_]*__" "$TRAIN_YAML_OUT" "$EXPORT_YAML_OUT"; then
-  echo "[error] unresolved placeholder(s) in rendered yaml" >&2
-  exit 1
-fi
 
 echo "done."

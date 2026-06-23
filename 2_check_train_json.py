@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
-"""Check & clean train.json against LLaMA-Factory's proportional truncation.
+"""Check & clean the task train JSON against LLaMA-Factory truncation.
 
-- 读 cutoff_len、image_max_pixels、model_name_or_path 都从 configs/lora_sft.yaml
+- 从当前 task 的 0_config.sh / yaml 模板读取 train.json、model、cutoff_len、image_max_pixels
+- 先归一化 images 本地路径，避免换工作目录后训练找不到图片
 - 真实模拟 src/llamafactory/data/processor/processor_utils.py 里的 infer_seqlen
 - 等比截断后看 <image> 占位是否被保留
-- 删掉会被砍掉 image 占位的样本，剩余 shuffle 后原地覆盖 train.json
-- 旧文件备份为 train.json.bak
-- 执行：.sft_venv/bin/python /home/work/slamm/youwei.wang/lora_sft_demo/_check_train_json.py
+- 删掉会被砍掉 image 占位的样本，剩余 shuffle 后原地覆盖当前 task 的 train JSON
+- 旧文件备份为 <train_json>.bak
+- 执行：.sft_venv/bin/python 2_check_train_json.py [TASK_NAME]
 """
-import json, math, os, random, re, shutil, subprocess, sys
+import json, os, random, re, shlex, shutil, subprocess, sys
 from pathlib import Path
 
 WORK_DIR = Path(__file__).resolve().parent
@@ -16,20 +17,28 @@ CFG = WORK_DIR / "0_config.sh"
 
 # ---- 拉 0_config.sh 的环境 -------------------------------------------------
 def load_env():
+    task_name = sys.argv[1].strip() if len(sys.argv) > 1 else os.environ.get("TASK_NAME", "").strip()
+    source_cmd = f'set -a; source {shlex.quote(str(CFG))}'
+    if task_name:
+        source_cmd += f" {shlex.quote(task_name)}"
+    source_cmd += "; env"
     out = subprocess.check_output(
-        ["bash", "-c", f'set -a; source "{CFG}"; env'], text=True
+        ["bash", "-c", source_cmd], text=True
     )
     for line in out.splitlines():
         if "=" in line:
             k, v = line.split("=", 1)
-            os.environ.setdefault(k, v)
+            os.environ[k] = v
 
 load_env()
+TASK_NAME = os.environ["TASK_NAME"]
 TRAIN_JSON = Path(os.environ["TRAIN_JSON"])
 MODEL_PATH = os.environ["MODEL_PATH"]
+IMG_DIR = Path(os.environ["IMG_DIR"])
+TRAIN_YAML_TPL = Path(os.environ["TRAIN_YAML_TPL"])
 
 # ---- 从 yaml 读 cutoff_len / image_max_pixels ------------------------------
-YAML = WORK_DIR / "configs" / "lora_sft.yaml"
+YAML = TRAIN_YAML_TPL
 def yaml_get(key, default):
     for line in YAML.read_text().splitlines():
         m = re.match(rf"\s*{key}\s*:\s*(\S+)", line)
@@ -40,16 +49,84 @@ def yaml_get(key, default):
 CUTOFF_LEN = int(yaml_get("cutoff_len", 12000))
 IMAGE_MAX_PIXELS = int(yaml_get("image_max_pixels", 262144))
 
+def normalize_image_path(raw):
+    raw = str(raw).strip()
+    if not raw:
+        return raw, False, False
+
+    p = Path(raw)
+    candidates = [p] if p.is_absolute() else [
+        TRAIN_JSON.parent / p,
+        WORK_DIR / p,
+        p,
+    ]
+    for candidate in candidates:
+        if candidate.exists():
+            normalized = str(candidate.resolve())
+            return normalized, normalized != raw, True
+
+    fallback = IMG_DIR / Path(raw).name
+    if fallback.exists():
+        normalized = str(fallback.resolve())
+        return normalized, normalized != raw, True
+    return raw, False, False
+
+
+def normalize_sample_images(data):
+    stats = {
+        "image_path_total": 0,
+        "image_path_rewritten": 0,
+        "image_path_missing": 0,
+    }
+    missing_examples = []
+    for idx, sample in enumerate(data):
+        images = sample.get("images") or []
+        normalized_images = []
+        for raw in images:
+            stats["image_path_total"] += 1
+            normalized, changed, exists = normalize_image_path(raw)
+            if changed:
+                stats["image_path_rewritten"] += 1
+            if not exists:
+                stats["image_path_missing"] += 1
+                if len(missing_examples) < 10:
+                    missing_examples.append((idx, str(raw)))
+            normalized_images.append(normalized)
+        if images:
+            sample["images"] = normalized_images
+    return stats, missing_examples
+
+
 # Qwen3-VL: patch_size=14, merge_size=2 -> 一个 vision token 覆盖 28x28 像素
 # 所以单张图展开的 image_pad token 数 ≈ image_max_pixels / (28*28)
 VISION_TOKENS_PER_IMAGE = max(1, IMAGE_MAX_PIXELS // (28 * 28))
 
+print(f"TASK_NAME        : {TASK_NAME}")
 print(f"TRAIN_JSON       : {TRAIN_JSON}")
 print(f"MODEL_PATH       : {MODEL_PATH}")
+print(f"TRAIN_YAML_TPL   : {YAML}")
+print(f"IMG_DIR          : {IMG_DIR}")
 print(f"CUTOFF_LEN       : {CUTOFF_LEN}")
 print(f"IMAGE_MAX_PIXELS : {IMAGE_MAX_PIXELS}")
 print(f"VISION_TOKENS/img: {VISION_TOKENS_PER_IMAGE}")
 print()
+
+# ---- 数据 + 图片路径 ---------------------------------------------------------
+data = json.loads(TRAIN_JSON.read_text(encoding="utf-8"))
+print(f"loaded {len(data)} samples")
+if not data:
+    raise SystemExit("[error] train JSON has no samples")
+
+path_stats, missing_examples = normalize_sample_images(data)
+print()
+print("== image path result ==")
+for k, v in path_stats.items():
+    print(f"  {k:20s}: {v}")
+if missing_examples:
+    print("  missing examples:")
+    for idx, raw in missing_examples:
+        print(f"    sample[{idx}] {raw}")
+    raise SystemExit("[error] missing image files; fix task data paths or rerun 2_convert_csv_to_json.py")
 
 # ---- tokenizer -------------------------------------------------------------
 from transformers import AutoTokenizer
@@ -81,10 +158,6 @@ def infer_seqlen(source_len, target_len, cutoff_len):
     new_source_len = min(max_source_len, source_len)
     return new_source_len, new_target_len
 
-# ---- 主流程 ----------------------------------------------------------------
-data = json.loads(TRAIN_JSON.read_text(encoding="utf-8"))
-print(f"loaded {len(data)} samples")
-
 VPAD_ID = tk.convert_tokens_to_ids(VPAD)
 
 stats = {
@@ -96,17 +169,6 @@ stats = {
 }
 src_lens, tgt_lens, total_lens = [], [], []
 kept = []
-
-
-### if you skip the /lora_sft_demo/2_convert_csv_to_json.py, need to fix the image local paths here;
-# for s in data: 
-#     s["images"] = [
-#         img.replace(
-#             "/home/work/Category_filesystem_V3/youwei.wang/sft", 
-#             "/home/work/slamm/youwei.wang/lora_sft_demo"
-#         )
-#         for img in s.get("images", [])
-#     ]
 
 for s in data:
     sys_p = s.get("system", "")
@@ -141,6 +203,8 @@ for s in data:
     stats["kept"] += 1
 
 def pct(xs, p):
+    if not xs:
+        return 0
     xs = sorted(xs); i = max(0, min(len(xs) - 1, int(round(p / 100 * (len(xs) - 1)))))
     return xs[i]
 

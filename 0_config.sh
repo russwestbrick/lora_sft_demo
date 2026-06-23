@@ -1,62 +1,153 @@
 #!/usr/bin/env bash
 # ===========================================================================
-# 0_config.sh - 唯一配置源
+# 0_config.sh - task_name -> detail_config_dict
 #
-# - 可以 `source 0_config.sh` 把所有变量带入当前 shell
-# - 也可以直接 `bash 0_config.sh` 跑一次，会打印现场摘要供肉眼复核
-# - 步骤脚本（1_/2_/3_）会自动 source 本文件，所以即使没 source 也不影响后续
+# - 配置集中写在同目录 0_yaml_to_setting.py 的 TASK_SETTINGS
+# - 可以 `source 0_config.sh <task_name>` 把变量带入当前 shell
+# - 也可以直接 `bash 0_config.sh <task_name>` 打印现场摘要
+# - 不传 task_name 时使用 0_yaml_to_setting.py 里的 DEFAULT_TASK_NAME
 # ===========================================================================
 set -euo pipefail
 
-# ---- 用户可调（基本只改这三行） -------------------------------------------
-: "${CSV_NAME:=training_data_extract_attributes_and_item_tags.csv}"
-: "${MODEL_PATH:=/home/work/model_repo/Qwen3-VL-8B-Instruct}"
-: "${IMG_CONCURRENCY:=16}"
-
-# ---- 路径派生（不要写绝对字面量） ------------------------------------------
 WORK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+TASK_SETTINGS_FILE="$WORK_DIR/0_yaml_to_setting.py"
+TASK_NAME_ARG="${1:-${TASK_NAME:-}}"
 
-# 训练数据：CSV / train.json / images/ 全部统一在 train_data/
-DATA_DIR="$WORK_DIR/train_data"
-CSV_PATH="$DATA_DIR/$CSV_NAME"
-TRAIN_JSON="$DATA_DIR/train.json"
-IMG_DIR="$DATA_DIR/images"
+TASK_EXPORTS="$(
+  python3 - "$TASK_SETTINGS_FILE" "$TASK_NAME_ARG" "$WORK_DIR" <<'PY'
+import runpy
+import shlex
+import sys
+from pathlib import Path
 
-# venv
-VENV_DIR="$WORK_DIR/.sft_venv"
-PY="$VENV_DIR/bin/python"
-LF_CLI="$VENV_DIR/bin/llamafactory-cli"
+settings_file = Path(sys.argv[1])
+task_name = sys.argv[2].strip()
+work_dir = Path(sys.argv[3]).resolve()
 
-# LLaMA-Factory
-LF_DIR="$WORK_DIR/LLaMA-Factory"
+try:
+    namespace = runpy.run_path(str(settings_file))
+except Exception as exc:
+    raise SystemExit(f"ERROR: failed to read task settings {settings_file}: {exc}")
 
-# 训练 / 导出落点
-SAVE_DIR="$WORK_DIR/saves/qwen3vl-8b/lora/sft"
-MERGED_DIR="$WORK_DIR/saves/qwen3vl-8b/lora/merged"
+root = namespace.get("TASK_SETTINGS")
+if not isinstance(root, dict):
+    raise SystemExit(f"ERROR: TASK_SETTINGS must be a dict in {settings_file}")
 
-# yaml 模板与渲染后的落点
-TRAIN_YAML_TPL="$WORK_DIR/configs/lora_sft.yaml"
-EXPORT_YAML_TPL="$WORK_DIR/configs/export.yaml"
-TRAIN_YAML_OUT="$LF_DIR/examples/train_lora/qwen3vl_8b_lora_sft.yaml"
-EXPORT_YAML_OUT="$LF_DIR/examples/merge_lora/qwen3vl_8b_lora_merge.yaml"
+if not task_name:
+    task_name = str(namespace.get("DEFAULT_TASK_NAME") or "").strip()
+if not task_name:
+    raise SystemExit(f"ERROR: task name is required and DEFAULT_TASK_NAME is empty in {settings_file}")
+if task_name not in root:
+    raise SystemExit(f"ERROR: task '{task_name}' not found in {settings_file}")
 
-# 数据集在 dataset_info.json 中的名字
-DATASET_NAME="extract_attrs_sft"
+setting = root[task_name]
+if not isinstance(setting, dict):
+    raise SystemExit(f"ERROR: task '{task_name}' must be a dict")
+if str(setting.get("_ready", 0)).strip() != "1":
+    raise SystemExit(f"ERROR: task '{task_name}' is not ready; set _ready=1 in {settings_file}")
+
+
+def required_str(name: str) -> str:
+    value = str(setting.get(name) or "").strip()
+    if not value:
+        raise SystemExit(f"ERROR: task '{task_name}'.{name} is required")
+    return value
+
+
+def positive_int(name, default=None):
+    raw = setting.get(name, default)
+    try:
+        value = int(raw)
+    except Exception:
+        raise SystemExit(f"ERROR: task '{task_name}'.{name} must be a positive integer")
+    if value <= 0:
+        raise SystemExit(f"ERROR: task '{task_name}'.{name} must be a positive integer")
+    return value
+
+
+def positive_env_int(name, default):
+    raw = env.get(name, default)
+    try:
+        value = int(raw)
+    except Exception:
+        raise SystemExit(f"ERROR: task '{task_name}'.env.{name} must be a positive integer")
+    if value <= 0:
+        raise SystemExit(f"ERROR: task '{task_name}'.env.{name} must be a positive integer")
+    return value
+
+
+def abs_path(value):
+    p = Path(value)
+    return p if p.is_absolute() else work_dir / p
+
+
+env = setting.get("env") or {}
+if not isinstance(env, dict):
+    raise SystemExit(f"ERROR: task '{task_name}'.env must be a dict")
+
+data_dir = abs_path(str(setting.get("data_dir") or "train_data"))
+csv_name = required_str("csv_name")
+train_json_name = str(setting.get("train_json_name") or "train.json").strip()
+image_dir_name = str(setting.get("image_dir_name") or "images").strip()
+if not train_json_name or not image_dir_name:
+    raise SystemExit(f"ERROR: task '{task_name}' train_json_name/image_dir_name cannot be empty")
+
+lf_dir = abs_path(str(setting.get("llamafactory_dir") or "LLaMA-Factory"))
+train_yaml_tpl = abs_path(required_str("train_yaml_template"))
+export_yaml_tpl = abs_path(required_str("export_yaml_template"))
+train_yaml_name = required_str("train_yaml_name")
+export_yaml_name = required_str("export_yaml_name")
+
+values = {
+    "TASK_NAME": task_name,
+    "WORK_DIR": str(work_dir),
+    "TASK_SETTINGS_FILE": str(settings_file),
+    "CSV_NAME": csv_name,
+    "MODEL_PATH": required_str("model_path"),
+    "IMG_CONCURRENCY": positive_int("img_concurrency", 16),
+    "DATA_DIR": str(data_dir),
+    "CSV_PATH": str(data_dir / csv_name),
+    "TRAIN_JSON": str(data_dir / train_json_name),
+    "IMG_DIR": str(data_dir / image_dir_name),
+    "VENV_DIR": str(abs_path(str(setting.get("venv_dir") or ".sft_venv"))),
+    "LF_DIR": str(lf_dir),
+    "SAVE_DIR": str(abs_path(required_str("save_dir"))),
+    "MERGED_DIR": str(abs_path(required_str("merged_dir"))),
+    "TRAIN_YAML_TPL": str(train_yaml_tpl),
+    "EXPORT_YAML_TPL": str(export_yaml_tpl),
+    "TRAIN_YAML_OUT": str(lf_dir / "examples" / "train_lora" / train_yaml_name),
+    "EXPORT_YAML_OUT": str(lf_dir / "examples" / "merge_lora" / export_yaml_name),
+    "DATASET_NAME": required_str("dataset_name"),
+    "PER_DEVICE_TRAIN_BATCH_SIZE": positive_int("per_device_train_batch_size", 1),
+    "GRADIENT_ACCUMULATION_STEPS": positive_int("gradient_accumulation_steps", 1),
+    "CUDA_VISIBLE_DEVICES": str(env.get("CUDA_VISIBLE_DEVICES", "0")).strip(),
+    "NPROC_PER_NODE": positive_env_int("NPROC_PER_NODE", 1),
+    "MASTER_PORT": positive_env_int("MASTER_PORT", 29500),
+}
+values["PY"] = str(Path(values["VENV_DIR"]) / "bin" / "python")
+values["LF_CLI"] = str(Path(values["VENV_DIR"]) / "bin" / "llamafactory-cli")
+values["GLOBAL_BATCH_SIZE"] = (
+    values["PER_DEVICE_TRAIN_BATCH_SIZE"]
+    * values["GRADIENT_ACCUMULATION_STEPS"]
+    * values["NPROC_PER_NODE"]
+)
+
+for name, value in values.items():
+    print(f"export {name}={shlex.quote(str(value))}")
+PY
+)" || {
+  return 1 2>/dev/null || exit 1
+}
+eval "$TASK_EXPORTS"
 
 mkdir -p "$DATA_DIR" "$IMG_DIR"
-
-export CSV_NAME MODEL_PATH IMG_CONCURRENCY
-export WORK_DIR DATA_DIR CSV_PATH TRAIN_JSON IMG_DIR
-export VENV_DIR PY LF_CLI LF_DIR
-export SAVE_DIR MERGED_DIR
-export TRAIN_YAML_TPL EXPORT_YAML_TPL TRAIN_YAML_OUT EXPORT_YAML_OUT
-export DATASET_NAME
 
 # ---- 直接执行（非 source）时打印现场摘要 -----------------------------------
 # BASH_SOURCE[0] == $0 时代表本文件是直接被 bash 调起，而不是被 source
 if [ "${BASH_SOURCE[0]}" = "${0}" ]; then
   exists() { [ -e "$1" ] && echo yes || echo no; }
   echo "==== lora_sft config ===="
+  echo "TASK_NAME       : $TASK_NAME"
   echo "WORK_DIR        : $WORK_DIR"
   echo "CSV_NAME        : $CSV_NAME"
   echo "CSV_PATH        : $CSV_PATH (exists? $(exists "$CSV_PATH"))"
@@ -69,6 +160,14 @@ if [ "${BASH_SOURCE[0]}" = "${0}" ]; then
   echo "SAVE_DIR        : $SAVE_DIR"
   echo "MERGED_DIR      : $MERGED_DIR"
   echo "DATASET_NAME    : $DATASET_NAME"
+  echo "TRAIN_YAML_TPL  : $TRAIN_YAML_TPL (exists? $(exists "$TRAIN_YAML_TPL"))"
+  echo "TRAIN_YAML_OUT  : $TRAIN_YAML_OUT"
+  echo "EXPORT_YAML_OUT : $EXPORT_YAML_OUT"
+  echo "CUDA_VISIBLE_DEVICES           : $CUDA_VISIBLE_DEVICES"
+  echo "NPROC_PER_NODE                 : $NPROC_PER_NODE"
+  echo "PER_DEVICE_TRAIN_BATCH_SIZE    : $PER_DEVICE_TRAIN_BATCH_SIZE"
+  echo "GRADIENT_ACCUMULATION_STEPS    : $GRADIENT_ACCUMULATION_STEPS"
+  echo "GLOBAL_BATCH_SIZE              : $GLOBAL_BATCH_SIZE"
   echo "========================="
-  echo "tip: 步骤脚本 1_/2_/3_ 会自动 source 本文件，无需手动 export"
+  echo "tip: edit 0_yaml_to_setting.py and choose TASK_NAME to switch model/data/yaml"
 fi

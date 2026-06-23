@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # shellcheck disable=SC1091
-source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/0_config.sh"
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/0_config.sh" "${1:-${TASK_NAME:-}}"
 
 UV="$HOME/.local/bin/uv"
 

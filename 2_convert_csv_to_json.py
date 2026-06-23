@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """CSV -> LLaMA-Factory sharegpt JSON (multimodal), threaded image download.
 
-Configuration is sourced from sibling 0_config.sh. No CLI args required.
+Configuration is sourced from sibling 0_config.sh. Pass an optional task name
+or pre-source 0_config.sh to select a task.
 
 Inputs  (from env, see 0_config.sh):
     CSV_PATH         absolute path to source CSV
@@ -15,6 +16,7 @@ import io
 import json
 import os
 import re
+import shlex
 import subprocess
 import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -33,15 +35,20 @@ IMG_EXTS = (".jpg", ".jpeg", ".png", ".webp", ".bmp")
 
 def _load_config():
     """Source sibling 0_config.sh into os.environ if not already loaded."""
-    if "WORK_DIR" in os.environ and "CSV_PATH" in os.environ:
+    task_name = sys.argv[1].strip() if len(sys.argv) > 1 else os.environ.get("TASK_NAME", "").strip()
+    if not task_name and "WORK_DIR" in os.environ and "CSV_PATH" in os.environ:
         return
     cfg = Path(__file__).resolve().parent / "0_config.sh"
     if not cfg.is_file():
         print(f"[error] missing config file: {cfg}", file=sys.stderr)
         sys.exit(2)
     # set -a 让 source 出来的赋值自动 export；之后 env 列出所有变量
+    source_cmd = f"set -a; source {shlex.quote(str(cfg))}"
+    if task_name:
+        source_cmd += f" {shlex.quote(task_name)}"
+    source_cmd += "; env"
     out = subprocess.run(
-        ["bash", "-c", f'set -a; source "{cfg}"; env'],
+        ["bash", "-c", source_cmd],
         check=True,
         capture_output=True,
         text=True,
