@@ -29,6 +29,7 @@ from tqdm import tqdm
 csv.field_size_limit(10**9)
 
 IMG_LINE_RE = re.compile(r"^\s*\U0001F5BC\uFE0F?\s*(\S+)\s*$", re.MULTILINE)
+IMAGE_TOKEN_RE = re.compile(r"<image>")
 TIMEOUT = 20
 IMG_EXTS = (".jpg", ".jpeg", ".png", ".webp", ".bmp")
 
@@ -163,11 +164,12 @@ def main():
     samples = []
     for sys_p, user_p, answer, urls in rows:
         images: list[str] = []
+        user_p = IMAGE_TOKEN_RE.sub("", user_p)
 
         def _sub(m):
             url = m.group(1)
             local = url_to_path.get(url)
-            if local is None:
+            if local is None or images:
                 return ""
             images.append(str(local))
             return "<image>"
