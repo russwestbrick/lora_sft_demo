@@ -14,15 +14,15 @@ lora_target: all                         # 对所有 linear 层挂 LoRA（attn +
 ### dataset
 dataset: __DATASET_NAME__                # 在 LLaMA-Factory/data/dataset_info.json 中注册的数据集名
 template: qwen3_vl                       # qwen3-vl 对话模板（带 <think>，与训练数据格式匹配）
-cutoff_len: 12000                        # 单样本 source+target token 上限；已用 check_train_json 等比模拟验证安全
+cutoff_len: 16000                        # 单样本 source+target token 上限；已用 check_train_json 等比模拟验证安全
 preprocessing_num_workers: 8             # tokenize/数据预处理的进程数
 dataloader_num_workers: 2                # DataLoader 的 worker 数
 
 ### output
 output_dir: __SAVE_DIR__                 # 由脚本替换为 $SAVE_DIR；训练完根目录的 adapter = 验证集最佳 ckpt（见下方 load_best_model_at_end）
 logging_steps: 1                         # 每步打印 loss/lr/grad_norm，方便观察
-save_steps: 300                          # 每 300 step 保存一次 checkpoint；必须等于 eval_steps（load_best_model_at_end 的硬约束）
-save_total_limit: 10                     # 最多保留 10 个最近 ckpt + 最佳 ckpt，磁盘占用可控
+save_steps: 50                           # 每 300 step 保存一次 checkpoint；必须等于 eval_steps（load_best_model_at_end 的硬约束）
+save_total_limit: 5                      # 最多保留 10 个最近 ckpt + 最佳 ckpt，磁盘占用可控
 plot_loss: true                          # 训完生成 training_loss.png / training_eval_loss.png
 overwrite_output_dir: true               # 允许覆盖旧 output_dir，避免手动清理
 save_only_model: true                    # 只存模型权重，不存 optimizer/scheduler 状态；单 ckpt 从 ~700MB 降到 ~50MB（代价：不能 resume）
@@ -47,4 +47,4 @@ resume_from_checkpoint: null             # 不从 ckpt resume；save_only_model=
 val_size: 200                            # 固定 200 条验证集（不是比例）；5778 里随机切，剩 5578 训练
 per_device_eval_batch_size: 2            # 与训练 batch 对齐，eval 提速
 eval_strategy: steps                     # 按 step 触发 eval
-eval_steps: 300                          # 必须等于 save_steps（load_best_model_at_end 硬约束）
+eval_steps: 50                          # 必须等于 save_steps（load_best_model_at_end 硬约束）

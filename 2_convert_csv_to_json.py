@@ -115,11 +115,17 @@ def main():
         sys.exit(2)
 
     # Pass 1: collect rows + dedup URLs (skip ones already cached)
+    MAX_CASES = int(os.environ.get("MAX_CASES", "1000"))
+
     rows = []
     urls_to_fetch: set[str] = set()
     cache_hits: dict[str, Path] = {}
-    print(f"[scan] {CSV_PATH}")
+    print(f"[scan] {CSV_PATH} max_cases={MAX_CASES}")
+
     for sys_p, user_p, answer, urls in tqdm(iter_rows(CSV_PATH), desc="scan", unit="row"):
+        if len(rows) >= MAX_CASES:
+            break
+
         rows.append((sys_p, user_p, answer, urls))
         for u in urls:
             if u in cache_hits or u in urls_to_fetch:
