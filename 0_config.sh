@@ -7,7 +7,7 @@
 # - 也可以直接 `bash 0_config.sh <task_name>` 打印现场摘要
 # - 不传 task_name 时使用 0_yaml_to_setting.py 里的 DEFAULT_TASK_NAME
 # ===========================================================================
-set -euo pipefail
+# set -euo pipefail
 
 WORK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TASK_SETTINGS_FILE="$WORK_DIR/0_yaml_to_setting.py"
