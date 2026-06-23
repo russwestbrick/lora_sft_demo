@@ -54,10 +54,15 @@ source ./0_config.sh qwen3vl_8b_extract_attrs_h100_4gpu
 cd "$LF_DIR"
 
 ../.sft_venv/bin/torchrun \
+  --nproc_per_node 1 \
+  --nnodes "$WORLD_SIZE" \
+  --node_rank "$RANK" \
+  --master_addr "$MASTER_ADDR" \
+  --master_port "$MASTER_PORT" \
   ../.sft_venv/bin/llamafactory-cli train "$TRAIN_YAML_OUT"
 ```
 
-这一步只依赖 task name、准备阶段导出的 `LF_DIR` 和 `TRAIN_YAML_OUT`。`WORLD_SIZE`、`RANK`、`MASTER_ADDR`、`MASTER_PORT`、`LOCAL_RANK`、`nproc_per_node` 等分布式启动参数由 AIS entry point / 平台默认值负责，不写进 `0_yaml_to_setting.py`。
+这一步只依赖 task name、准备阶段导出的 `LF_DIR` 和 `TRAIN_YAML_OUT`，以及 AIS 注入的 `WORLD_SIZE`、`RANK`、`MASTER_ADDR`、`MASTER_PORT`。AIS 每个 pod 一张卡，所以 `--nproc_per_node` 固定写 1；这些分布式启动参数不写进 `0_yaml_to_setting.py`。
 
 6. 导出合并 ckpt：
 ```bash
