@@ -6,7 +6,7 @@
 
 ## 配置只改 0_yaml_to_setting.py
 
-每个任务都写在 `0_yaml_to_setting.py` 的 `TASK_SETTINGS` 里，切换 `TASK_NAME` 就能切换 model、CSV、dataset、yaml 模板、渲染后的 yaml 文件名、输出目录和多卡参数。
+每个任务都写在 `0_yaml_to_setting.py` 的 `TASK_SETTINGS` 里，切换 `TASK_NAME` 就能切换 model、CSV、dataset、yaml 模板、渲染后的 yaml 文件名和输出目录。
 
 需要肉眼复核配置时：
 ```bash
@@ -48,19 +48,16 @@ bash 1_python_venv.sh qwen3vl_8b_extract_attrs_h100_4gpu
 bash 3_install_to_llamafactory.sh qwen3vl_8b_extract_attrs_h100_4gpu
 ```
 
-5.1 LoRA SFT（AIS 4 节点，每节点 1 张 H100 / torchrun）：
+5.1 LoRA SFT（AIS entry point / torchrun）：
 ```bash
 source ./0_config.sh qwen3vl_8b_extract_attrs_h100_4gpu
 cd "$LF_DIR"
 
-"$VENV_DIR/bin/torchrun" \
-  --nnodes="$WORLD_SIZE" \
-  --node_rank="$RANK" \
-  --nproc_per_node="$NPROC_PER_NODE" \
-  "$LF_CLI" train "$TRAIN_YAML_OUT"
+../.sft_venv/bin/torchrun \
+  ../.sft_venv/bin/llamafactory-cli train "$TRAIN_YAML_OUT"
 ```
 
-AIS 会注入 `WORLD_SIZE`、`RANK`、`MASTER_ADDR`、`MASTER_PORT`、`LOCAL_RANK`。当前 task 不覆盖 `CUDA_VISIBLE_DEVICES`、`MASTER_ADDR`、`MASTER_PORT`；`NPROC_PER_NODE=1`，4 个 AIS pod 时 `global_batch = 1 * 1 * 1 * 4 = 4`。
+这一步只依赖 task name、准备阶段导出的 `LF_DIR` 和 `TRAIN_YAML_OUT`。`WORLD_SIZE`、`RANK`、`MASTER_ADDR`、`MASTER_PORT`、`LOCAL_RANK`、`nproc_per_node` 等分布式启动参数由 AIS entry point / 平台默认值负责，不写进 `0_yaml_to_setting.py`。
 
 6. 导出合并 ckpt：
 ```bash
