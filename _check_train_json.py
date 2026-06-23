@@ -97,6 +97,17 @@ stats = {
 src_lens, tgt_lens, total_lens = [], [], []
 kept = []
 
+
+### if you skip the /lora_sft_demo/2_convert_csv_to_json.py, need to fix the image local paths here;
+# for s in data: 
+#     s["images"] = [
+#         img.replace(
+#             "/home/work/Category_filesystem_V3/youwei.wang/sft", 
+#             "/home/work/slamm/youwei.wang/lora_sft_demo"
+#         )
+#         for img in s.get("images", [])
+#     ]
+
 for s in data:
     sys_p = s.get("system", "")
     user  = s["messages"][0]["content"]
