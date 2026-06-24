@@ -117,6 +117,7 @@ def main():
 
     # Pass 1: collect rows + dedup URLs (skip ones already cached)
     MAX_CASES = int(os.environ.get("MAX_CASES", "1000"))
+    MAX_CASES = 999999 ### ‼️ need to comments when testing the script, otherwise it will only process 1000 cases
 
     rows = []
     urls_to_fetch: set[str] = set()
