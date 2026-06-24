@@ -3,52 +3,25 @@
 
 Usage:
     python 4_print_eval_loss.py /path/to/trainer_log.jsonl
-    python 4_print_eval_loss.py /path/to/trainer_log.jsonl --task-name qwen3vl_8b_extract_attrs_h100_8gpu
     python 4_print_eval_loss.py /path/to/trainer_log.jsonl --save-dir /tmp/my_plots
 """
 
 import argparse
 import json
-import shlex
-import subprocess
 import sys
 from datetime import datetime
 from pathlib import Path
-
-
-WORK_DIR = Path(__file__).resolve().parent
-CFG = WORK_DIR / "0_config.sh"
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Print eval_loss rows and draw an eval_loss curve.")
     parser.add_argument("log_path", help="Path to trainer_log.jsonl")
     parser.add_argument(
-        "--task-name",
-        default="",
-        help="Optional task name from 0_yaml_to_setting.py. Defaults to DEFAULT_TASK_NAME/current TASK_NAME.",
-    )
-    parser.add_argument(
         "--save-dir",
         default="",
-        help="Optional output directory for the generated image. Defaults to SAVE_DIR from 0_config.sh.",
+        help="Optional output directory for the generated image. Defaults to the trainer_log.jsonl directory.",
     )
     return parser.parse_args()
-
-
-def load_task_env(task_name: str) -> dict[str, str]:
-    source_cmd = f"set -a; source {shlex.quote(str(CFG))}"
-    if task_name:
-        source_cmd += f" {shlex.quote(task_name)}"
-    source_cmd += "; env"
-    out = subprocess.check_output(["bash", "-c", source_cmd], text=True)
-
-    env = {}
-    for line in out.splitlines():
-        if "=" in line:
-            key, value = line.split("=", 1)
-            env[key] = value
-    return env
 
 
 def read_eval_rows(log_path: Path) -> list[tuple[int, dict]]:
@@ -92,7 +65,7 @@ def print_eval_rows(eval_rows: list[tuple[int, dict]]) -> tuple[int, dict]:
 
 def build_output_path(save_dir: Path, suffix: str) -> Path:
     save_dir.mkdir(parents=True, exist_ok=True)
-    stem = f"eval_loss_curve_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+    stem = f"eval_loss_curve_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}"
     candidate = save_dir / f"{stem}{suffix}"
     index = 1
     while candidate.exists():
@@ -117,7 +90,8 @@ def save_matplotlib_plot(
     x_values: list[float],
     y_values: list[float],
     best_idx: int,
-    task_name: str,
+    title_label: str,
+    generated_at: str,
 ) -> Path:
     import matplotlib
 
@@ -144,11 +118,12 @@ def save_matplotlib_plot(
         color="#d62728",
         bbox={"boxstyle": "round,pad=0.3", "fc": "#fff5f5", "ec": "#d62728"},
     )
-    ax.set_title(f"Eval Loss Curve - {task_name}")
+    ax.set_title(f"Eval Loss Curve - {title_label}")
     ax.set_xlabel("current_steps")
     ax.set_ylabel("eval_loss")
     ax.grid(True, linestyle="--", linewidth=0.7, alpha=0.45)
     ax.legend()
+    fig.text(0.99, 0.01, f"generated_at: {generated_at}", ha="right", va="bottom", fontsize=8, color="#6b7280")
     fig.tight_layout()
     fig.savefig(output_path)
     plt.close(fig)
@@ -160,7 +135,8 @@ def save_svg_plot(
     x_values: list[float],
     y_values: list[float],
     best_idx: int,
-    task_name: str,
+    title_label: str,
+    generated_at: str,
 ) -> Path:
     width = 1200
     height = 700
@@ -220,8 +196,9 @@ def save_svg_plot(
 
     svg = f"""<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}">
   <rect width="100%" height="100%" fill="#ffffff"/>
-  <text x="{left}" y="36" font-size="28" font-weight="700" fill="#111827">Eval Loss Curve - {task_name}</text>
+  <text x="{left}" y="36" font-size="28" font-weight="700" fill="#111827">Eval Loss Curve - {title_label}</text>
   <text x="{left}" y="60" font-size="15" fill="#4b5563">Generated from trainer_log.jsonl</text>
+  <text x="{width-right}" y="60" font-size="14" text-anchor="end" fill="#6b7280">generated_at: {generated_at}</text>
   <rect x="{left}" y="{top}" width="{chart_width}" height="{chart_height}" fill="#fcfcfd" stroke="#d1d5db" stroke-width="1.5"/>
   {''.join(y_ticks)}
   {''.join(x_ticks)}
@@ -237,15 +214,15 @@ def save_svg_plot(
     return output_path
 
 
-def save_plot(eval_rows: list[tuple[int, dict]], save_dir: Path, task_name: str) -> Path:
+def save_plot(eval_rows: list[tuple[int, dict]], save_dir: Path, title_label: str, generated_at: str) -> Path:
     x_values, y_values, best_idx, _ = extract_series(eval_rows)
     try:
         output_path = build_output_path(save_dir, ".png")
-        return save_matplotlib_plot(output_path, x_values, y_values, best_idx, task_name)
+        return save_matplotlib_plot(output_path, x_values, y_values, best_idx, title_label, generated_at)
     except Exception as exc:
         print(f"[warn] matplotlib plot failed, fallback to svg: {exc}", file=sys.stderr)
         output_path = build_output_path(save_dir, ".svg")
-        return save_svg_plot(output_path, x_values, y_values, best_idx, task_name)
+        return save_svg_plot(output_path, x_values, y_values, best_idx, title_label, generated_at)
 
 
 def main() -> int:
@@ -255,9 +232,9 @@ def main() -> int:
         print(f"[error] file not found: {log_path}", file=sys.stderr)
         return 1
 
-    task_env = load_task_env(args.task_name)
-    task_name = task_env.get("TASK_NAME", args.task_name or "unknown_task")
-    save_dir = Path(args.save_dir).expanduser() if args.save_dir else Path(task_env["SAVE_DIR"])
+    save_dir = Path(args.save_dir).expanduser() if args.save_dir else log_path.parent
+    title_label = log_path.name
+    generated_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     eval_rows = read_eval_rows(log_path)
     if not eval_rows:
@@ -265,7 +242,7 @@ def main() -> int:
         return 0
 
     print_eval_rows(eval_rows)
-    image_path = save_plot(eval_rows, save_dir, task_name)
+    image_path = save_plot(eval_rows, save_dir, title_label, generated_at)
     print(f"saved eval_loss image: {image_path}")
     return 0
 
