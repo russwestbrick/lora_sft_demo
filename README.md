@@ -12,7 +12,7 @@
 
 ```bash
 cd WORK_DIR
-bash 0_config.sh qwen3vl_8b_extract_attrs_h100_4gpu
+bash 0_config.sh qwen3vl_8b_extract_attrs_h100_8gpu
 ```
 
 步骤脚本会自动 `source 0_config.sh`。不传 task 时使用 `0_yaml_to_setting.py` 里的 `DEFAULT_TASK_NAME`。
@@ -40,19 +40,19 @@ bash 1_python_venv.sh qwen3vl_8b_extract_attrs_h100_4gpu
 3. CSV -> sharegpt JSON + 并发下载图片：
 
 ```bash
-.sft_venv/bin/python 2_convert_csv_to_json.py qwen3vl_8b_extract_attrs_h100_4gpu
+.sft_venv/bin/python 2_convert_csv_to_json.py qwen3vl_8b_extract_attrs_h100_8gpu
 ```
 
 4. 清洗 train JSON，校验图片路径和 LLaMA-Factory 等比截断后 `<image>` 是否保留：
 
 ```bash
-.sft_venv/bin/python 2_check_train_json.py qwen3vl_8b_extract_attrs_h100_4gpu
+.sft_venv/bin/python 2_check_train_json.py qwen3vl_8b_extract_attrs_h100_8gpu
 ```
 
 5. 注册数据集 + 渲染并拷贝 yaml 到 LLaMA-Factory：
 
 ```bash
-bash 3_install_to_llamafactory.sh qwen3vl_8b_extract_attrs_h100_4gpu
+bash 3_install_to_llamafactory.sh qwen3vl_8b_extract_attrs_h100_8gpu
 ```
 
 **6.1 LoRA SFT（单卡 smoke test）：**
