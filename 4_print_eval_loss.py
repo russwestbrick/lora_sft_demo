@@ -63,15 +63,11 @@ def print_eval_rows(eval_rows: list[tuple[int, dict]]) -> tuple[int, dict]:
     return best_line_no, best_row
 
 
-def build_output_path(save_dir: Path, suffix: str) -> Path:
+def build_output_path(log_path: Path, save_dir: Path, suffix: str) -> Path:
     save_dir.mkdir(parents=True, exist_ok=True)
-    stem = f"eval_loss_curve_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}"
-    candidate = save_dir / f"{stem}{suffix}"
-    index = 1
-    while candidate.exists():
-        candidate = save_dir / f"{stem}_{index:02d}{suffix}"
-        index += 1
-    return candidate
+    safe_stem = "".join(ch if ch.isalnum() or ch in {"-", "_"} else "_" for ch in log_path.stem).strip("_")
+    safe_stem = safe_stem or "trainer_log"
+    return save_dir / f"{safe_stem}.codex_eval_loss_curve{suffix}"
 
 
 def extract_series(eval_rows: list[tuple[int, dict]]) -> tuple[list[float], list[float], int, dict]:
@@ -214,15 +210,29 @@ def save_svg_plot(
     return output_path
 
 
-def save_plot(eval_rows: list[tuple[int, dict]], save_dir: Path, title_label: str, generated_at: str) -> Path:
+def save_plot(
+    eval_rows: list[tuple[int, dict]],
+    log_path: Path,
+    save_dir: Path,
+    title_label: str,
+    generated_at: str,
+) -> Path:
     x_values, y_values, best_idx, _ = extract_series(eval_rows)
     try:
-        output_path = build_output_path(save_dir, ".png")
-        return save_matplotlib_plot(output_path, x_values, y_values, best_idx, title_label, generated_at)
+        output_path = build_output_path(log_path, save_dir, ".png")
+        alt_output_path = build_output_path(log_path, save_dir, ".svg")
+        saved_path = save_matplotlib_plot(output_path, x_values, y_values, best_idx, title_label, generated_at)
+        if alt_output_path.exists():
+            alt_output_path.unlink()
+        return saved_path
     except Exception as exc:
         print(f"[warn] matplotlib plot failed, fallback to svg: {exc}", file=sys.stderr)
-        output_path = build_output_path(save_dir, ".svg")
-        return save_svg_plot(output_path, x_values, y_values, best_idx, title_label, generated_at)
+        output_path = build_output_path(log_path, save_dir, ".svg")
+        alt_output_path = build_output_path(log_path, save_dir, ".png")
+        saved_path = save_svg_plot(output_path, x_values, y_values, best_idx, title_label, generated_at)
+        if alt_output_path.exists():
+            alt_output_path.unlink()
+        return saved_path
 
 
 def main() -> int:
@@ -242,7 +252,7 @@ def main() -> int:
         return 0
 
     print_eval_rows(eval_rows)
-    image_path = save_plot(eval_rows, save_dir, title_label, generated_at)
+    image_path = save_plot(eval_rows, log_path, save_dir, title_label, generated_at)
     print(f"saved eval_loss image: {image_path}")
     return 0
 
