@@ -36,7 +36,7 @@ TASK_SETTINGS = {
     "qwen3vl_8b_extract_attrs_h100_8gpu": {
         "_ready": 1,
         "description": "Qwen3-VL-8B extract attributes LoRA SFT on 8 H100 GPUs",
-        "data_dir": "/Users/youwei.wang/Desktop/quality_score",
+        # "data_dir": "/Users/youwei.wang/Desktop/quality_score",
         "csv_name": "training_data_test_extract_attributes_cleaned.csv",
         "train_json_name": "train_qwen3vl_8b_extract_attrs_h100_8gpu_cleaned.json",
         "image_dir_name": "images_qwen3vl_8b_extract_attrs_h100_8gpu_cleaned",
