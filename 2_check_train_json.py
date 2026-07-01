@@ -11,6 +11,7 @@
 """
 import json, os, random, re, shlex, shutil, subprocess, sys
 from pathlib import Path
+from tqdm import tqdm
 
 WORK_DIR = Path(__file__).resolve().parent
 CFG = WORK_DIR / "0_config.sh"
@@ -170,7 +171,7 @@ stats = {
 src_lens, tgt_lens, total_lens = [], [], []
 kept = []
 
-for s in data:
+for s in tqdm(data, desc="tokenize", unit="sample"):
     sys_p = s.get("system", "")
     user  = s["messages"][0]["content"]
     asst  = s["messages"][1]["content"]
