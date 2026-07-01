@@ -60,7 +60,7 @@ bash 3_install_to_llamafactory.sh qwen3vl_8b_extract_attrs_h100_8gpu
 * 这一步用于先在单卡上调通数据、yaml、模型路径和 LLaMA-Factory 环境，不依赖 AIS 分布式变量。
 
 ```bash
-source ./0_config.sh qwen3vl_8b_extract_attrs_h100_4gpu && \
+source ./0_config.sh qwen35vl_9b_extract_attrs_tags_h100_8gpu && \
 cd "$LF_DIR" && \
 CUDA_VISIBLE_DEVICES=0 \
 ../.sft_venv/bin/llamafactory-cli train "$TRAIN_YAML_OUT"
