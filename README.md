@@ -108,3 +108,4 @@ cp /home/work/slamm/youwei.wang/lora_sft_demo/model_repo/Qwen3-VL-8B-Instruct/co
 - 训练数据：当前 task 的 `CSV_PATH` / `TRAIN_JSON` / `IMG_DIR`
 - LoRA：当前 task 的 `SAVE_DIR`
 - 合并模型：当前 task 的 `MERGED_DIR`
+
