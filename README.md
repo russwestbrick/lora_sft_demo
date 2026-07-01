@@ -94,6 +94,12 @@ cd "$LF_DIR" && \
 source ./0_config.sh qwen3vl_8b_extract_attrs_h100_4gpu && \
 cd "$LF_DIR" && \
 "$LF_CLI" export "$EXPORT_YAML_OUT"
+
+### 后续可能因为 transformer 版本不对 出现问题
+cp /home/work/model_repo/qwen3vl_8b_extract_attrs_8h100_ckpt2700/config.json \
+   /home/work/model_repo/qwen3vl_8b_extract_attrs_8h100_ckpt2700/config.json.bak && \
+cp /home/work/slamm/youwei.wang/lora_sft_demo/model_repo/Qwen3-VL-8B-Instruct/config.json \
+   /home/work/model_repo/qwen3vl_8b_extract_attrs_8h100_ckpt2700/config.json
 ```
 
 ## 产物落点
