@@ -9,7 +9,7 @@ ais login --email youwei.wang@shopee.com --token isqbmbgjgpafmrzlkfEplpoBscyDyxu
 ais model download --model_id=39978 --version_id=67719 --output_path="<task_name.model_path>" --project=112
 """
 
-DEFAULT_TASK_NAME = "qwen3vl_8b_extract_attrs_h100_8gpu"
+DEFAULT_TASK_NAME = "qwen35vl_9b_extract_attrs_tags_h100_8gpu"
 
 TASK_SETTINGS = {
     "qwen3vl_8b_extract_attrs_h100_4gpu": {
@@ -48,6 +48,27 @@ TASK_SETTINGS = {
         "export_yaml_name": "qwen3vl_8b_extract_attrs_h100_8gpu_lora_merge.yaml",
         "save_dir": "saves/qwen3vl_8b_extract_attrs_h100_8gpu/lora/sft",
         "merged_dir": "saves/qwen3vl_8b_extract_attrs_h100_8gpu/lora/merged",
+        "img_concurrency": 16,
+        # These two fields render into the LLaMA-Factory yaml. Distributed launch
+        # knobs such as WORLD_SIZE/RANK/NPROC_PER_NODE stay in the platform entrypoint.
+        "per_device_train_batch_size": 1,
+        "gradient_accumulation_steps": 1,
+    },
+
+    "qwen35vl_9b_extract_attrs_tags_h100_8gpu": {
+        "_ready": 1,
+        "description": "Qwen3.5-VL-9B extract attributes & item_tags LoRA SFT on 8 H100 GPUs",
+        "csv_name": "sft_data_14543.csv",
+        "train_json_name": "train_qwen35vl_9b_extract_attrs_tags_h100_8gpu.json",
+        "image_dir_name": "images_qwen35vl_9b_extract_attrs_tags_h100_8gpu",
+        "model_path": "/home/work/slamm/youwei.wang/lora_sft_demo/model_repo/Qwen35-9B",
+        "dataset_name": "extract_attrs_tags_sft_h100_8gpu",
+        "train_yaml_template": "configs/lora_sft_attrs_tags_8h100.yaml",
+        "export_yaml_template": "configs/export.yaml",
+        "train_yaml_name": "qwen35vl_9b_extract_attrs_tags_h100_8gpu_lora_sft.yaml",
+        "export_yaml_name": "qwen35vl_9b_extract_attrs_tags_h100_8gpu_lora_merge.yaml",
+        "save_dir": "saves/qwen35vl_9b_extract_attrs_tags_h100_8gpu/lora/sft",
+        "merged_dir": "saves/qwen35vl_9b_extract_attrs_tags_h100_8gpu/lora/merged",
         "img_concurrency": 16,
         # These two fields render into the LLaMA-Factory yaml. Distributed launch
         # knobs such as WORLD_SIZE/RANK/NPROC_PER_NODE stay in the platform entrypoint.

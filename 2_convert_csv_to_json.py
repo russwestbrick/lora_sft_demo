@@ -33,6 +33,34 @@ IMAGE_TOKEN_RE = re.compile(r"<image>")
 TIMEOUT = 20
 IMG_EXTS = (".jpg", ".jpeg", ".png", ".webp", ".bmp")
 
+# Qwen3.5 训练时关思考链；切别的模型时把它改成 "" 即可（拼接逻辑保持不变，安全无副作用）。
+NO_THINKING_PREFIX = "/no_thinking\n"
+
+
+def strip_private_fields(answer_json_str: str) -> str:
+    """Pop assistant JSON 中所有 '_' 开头的字段（如 _fixed / _conflict / _reason_eval）。
+
+    - 解析失败则原样返回，保持向后兼容；
+    - 递归清理嵌套 dict / list。
+    """
+    try:
+        obj = json.loads(answer_json_str)
+    except Exception:
+        return answer_json_str
+
+    def walk(x):
+        if isinstance(x, dict):
+            for k in [k for k in x if isinstance(k, str) and k.startswith("_")]:
+                x.pop(k, None)
+            for v in x.values():
+                walk(v)
+        elif isinstance(x, list):
+            for it in x:
+                walk(it)
+
+    walk(obj)
+    return json.dumps(obj, ensure_ascii=False)
+
 
 def _load_config():
     """Source sibling 0_config.sh into os.environ if not already loaded."""
@@ -179,6 +207,7 @@ def main():
         cleaned = re.sub(r"\n{3,}", "\n\n", cleaned).strip()
         if not images:
             continue
+        answer = strip_private_fields(answer)
         sample = {
             "messages": [
                 {"role": "user", "content": cleaned},
@@ -186,8 +215,9 @@ def main():
             ],
             "images": images,
         }
-        if sys_p:
-            sample["system"] = sys_p
+        merged_system = (NO_THINKING_PREFIX + sys_p) if sys_p else NO_THINKING_PREFIX.rstrip("\n")
+        if merged_system:
+            sample["system"] = merged_system
         samples.append(sample)
 
     TRAIN_JSON.parent.mkdir(parents=True, exist_ok=True)

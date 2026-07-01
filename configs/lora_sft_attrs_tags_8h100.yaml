@@ -1,0 +1,51 @@
+### model
+model_name_or_path: __MODEL_PATH__       # 由 3_install_to_llamafactory.sh 用当前 task 的 MODEL_PATH 替换
+image_max_pixels: 262144                 # 单张图最大像素；qwen3-vl 每 28x28 像素 = 1 vision token，所以 ≈ 334 token/张
+video_max_pixels: 16384                  # 视频帧像素上限（本任务无视频，留默认即可）
+trust_remote_code: true                  # qwen3-vl 模型权重里带自定义 modeling 代码，必须开
+
+### method
+stage: sft                               # 监督微调阶段（不是 pretrain / reward / ppo）
+do_train: true                           # 启用训练循环
+finetuning_type: lora                    # 走 LoRA，不动 base 权重
+lora_rank: 16                            # 8 卡 H100 可承受更高 LoRA 容量；16 在 5k+ 样本上通常比 rank 8 更稳
+lora_target: all                         # 对所有 linear 层挂 LoRA（attn + mlp），覆盖最全
+
+### dataset
+dataset: __DATASET_NAME__                # 在 LLaMA-Factory/data/dataset_info.json 中注册的数据集名
+template: qwen3_vl                       # qwen3-vl 对话模板（带 <think>，与训练数据格式匹配）
+cutoff_len: 24000                        # 覆盖 attrs+item_tags 新 CSV p99 长度，正式 1.45w 数据留余量；已用 check_train_json 等比模拟验证
+preprocessing_num_workers: 8             # tokenize/数据预处理的进程数
+dataloader_num_workers: 2                # DataLoader 的 worker 数
+
+### output
+output_dir: __SAVE_DIR__                 # 由脚本替换为 $SAVE_DIR；训练完根目录的 adapter = 验证集最佳 ckpt（见下方 load_best_model_at_end）
+logging_steps: 1                         # 每步打印 loss/lr/grad_norm，方便观察
+save_steps: 25                           # 8 卡后单轮 step 更少，改成每 25 step 保存一次，便于更密集追踪最佳点
+save_total_limit: 10                     # save/eval 更频繁时多保留一些 ckpt，回看最佳点更从容
+plot_loss: true                          # 训完生成 training_loss.png / training_eval_loss.png
+# ‼️ 下次跑（resume from checkpoint 就要变成 false）‼️
+overwrite_output_dir: true               # 允许覆盖旧 output_dir，避免手动清理 
+save_only_model: false                    # 只存模型权重，不存 optimizer/scheduler 状态；单 ckpt 从 ~700MB 降到 ~50MB（代价：不能 resume）
+load_best_model_at_end: true             # 训完自动把验证集最优 ckpt 加载回来并写到 output_dir 根目录
+metric_for_best_model: eval_loss         # 用 eval_loss 选最佳
+greater_is_better: false                 # eval_loss 越小越好
+report_to: none                          # 不上报 wandb/tensorboard；本地任务无需
+
+### train
+per_device_train_batch_size: __PER_DEVICE_TRAIN_BATCH_SIZE__    # 8 卡 H100 仍建议单卡 1 条，优先留足视觉和文本上下文空间
+gradient_accumulation_steps: __GRADIENT_ACCUMULATION_STEPS__    # 默认 global_batch = 1 * 1 * 8 = 8，先保持较细粒度的优化步
+learning_rate: 3.0e-5                    # global batch 变大后适当降 lr，长轮次下更稳
+num_train_epochs: 6.0                    # 5773 条样本在 8 卡上提到 6 轮，兼顾训练更充分和过拟合风险
+lr_scheduler_type: cosine                # 余弦退火，end-of-training 自然收敛
+warmup_ratio: 0.05                       # 总 step 增加后 warmup 比例下调到 5%
+bf16: true                               # H100 上 bf16 是最佳精度（不上 fp8，LoRA 不支持）
+# flash_attn: fa2                          # 启用 FlashAttention-2，H100 上提速明显；若 venv 未装 flash-attn 启动会报错，可去掉此行
+ddp_timeout: 180000000                   # 单卡跑用不到，留着备多卡场景
+resume_from_checkpoint: null             # 不从 ckpt resume；save_only_model=true 时也无法 resume
+
+### eval
+val_size: 320                            # 验证集略放大，best model 选择更稳；5773 条样本下训练集仍足够
+per_device_eval_batch_size: 4            # 8 卡 H100 下可把 eval batch 再提一些，抵消更频繁 eval 的耗时
+eval_strategy: steps                     # 按 step 触发 eval
+eval_steps: 25                           # 必须等于 save_steps（load_best_model_at_end 硬约束）
