@@ -96,10 +96,9 @@ cd "$LF_DIR" && \
 "$LF_CLI" export "$EXPORT_YAML_OUT"
 
 ### 后续可能因为 transformer 版本不对 出现问题
-cp /home/work/model_repo/qwen3vl_8b_extract_attrs_8h100_ckpt2700/config.json \
-   /home/work/model_repo/qwen3vl_8b_extract_attrs_8h100_ckpt2700/config.json.bak && \
-cp /home/work/slamm/youwei.wang/lora_sft_demo/model_repo/Qwen3-VL-8B-Instruct/config.json \
-   /home/work/model_repo/qwen3vl_8b_extract_attrs_8h100_ckpt2700/config.json
+### 将 base model 的config 复制到 导出的 check point
+cd .. && \
+bash sync_hf_configs.sh <base_model_dir> <ckpt-model-dir> --dry-run
 ```
 
 ## 产物落点
