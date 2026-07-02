@@ -33,9 +33,6 @@ FILES=(
   # 4. Chat 模板
   "chat_template.jinja"
 
-  # 5. 权重索引（保证 from_pretrained 能正确加载分片）
-  "model.safetensors.index.json"
-  "pytorch_model.bin.index.json"
 )
 
 # ── 前置检查 ──────────────────────────────────────────────────────
@@ -64,7 +61,7 @@ for f in "${FILES[@]}"; do
   # 源文件不存在则跳过
   if [[ ! -f "$src_path" ]]; then
     echo "  SKIP  $f  (源文件不存在)"
-    ((skipped++))
+    ((skipped++)) || true
     continue
   fi
 
@@ -77,19 +74,19 @@ for f in "${FILES[@]}"; do
     else
       echo "  COPY  $f  (目标无此文件 → 新增)"
     fi
-    ((copied++))
+    ((copied++)) || true
     continue
   fi
 
   # 目标已存在 → 备份
   if [[ -f "$dst_path" ]]; then
     cp -v "$dst_path" "${dst_path}.bak"
-    ((backed_up++))
+    ((backed_up++)) || true
   fi
 
   # 复制
   cp -v "$src_path" "$dst_path"
-  ((copied++))
+  ((copied++)) || true
 done
 
 echo ""
